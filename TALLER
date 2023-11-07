@@ -1,0 +1,525 @@
+import re
+import uuid  
+from datetime import datetime
+import openpyxl
+import csv
+
+clientes_data = {
+    'clave1': {'Nombre': 'Cliente 1', 'RFC': 'RFC1', 'Correo': 'cliente1@example.com'},
+    'clave2': {'Nombre': 'Cliente 2', 'RFC': 'RFC2', 'Correo': 'cliente2@example.com'},
+    
+}
+
+servicios_data = {
+    'servicio1': {'Nombre': 'Servicio 1', 'Costo': 100.0},
+    'servicio2': {'Nombre': 'Servicio 2', 'Costo': 200.0},
+    
+}
+
+Nota_registrada = {}
+Notas_canceladas = []
+
+folio_actual = 1
+
+print("Bienvenido al taller automotriz Los pillos")
+print("Este es nuestro menú")
+print("¿Qué deseas hacer hoy?")
+
+
+def registrar_nota():
+    cliente_clave = seleccionar_cliente()
+    if cliente_clave is None:
+        print("Operación cancelada. No se ha registrado la nota.")
+        return
+
+    fecha = input("Ingrese la fecha (YYYY-MM-DD): ")
+
+    servicios_realizados = []
+    while True:
+        servicio = seleccionar_servicio()
+        if servicio is None:
+            break
+        servicios_realizados.append(servicio)
+
+    if not servicios_realizados:
+        print("La nota debe contener al menos un servicio. Operación cancelada.")
+        return
+
+    nota = {
+        'Cliente': clientes_data[cliente_clave],
+        'Fecha': fecha,
+        'Servicios': servicios_realizados,
+        'Monto Total': sum(servicio['Costo'] for servicio in servicios_realizados),
+        'Cancelada': False
+    }
+
+    global folio_actual
+    nota['Folio'] = folio_actual
+    folio_actual += 1
+
+    Nota_registrada[nota['Folio']] = nota
+    print(f"Nota {nota['Folio']} registrada exitosamente.")
+
+def agregar_cliente():
+    while True:
+        clave_cliente = str(uuid.uuid4())[:8]  
+        nombre = input("Ingrese el nombre completo del cliente: ").strip()
+        rfc = input("Ingrese el RFC del cliente (con formato válido para México): ").strip()
+        correo = input("Ingrese el correo electrónico del cliente (con formato válido): ").strip()
+
+        if not (nombre and re.match(r'^[A-Z&Ña-záéíóúüÁÉÍÓÚÜ\s]+$', nombre)
+                and re.match(r'^[A-Z&Ñ]{3,4}\d{6}[A-V1-9][0-9A-Z]$', rfc)
+                and re.match(r'^[\w\.-]+@[\w\.-]+$', correo)):
+            print("Por favor, ingrese un nombre, RFC y correo válidos.")
+            continue
+
+        clientes_data[clave_cliente] = {'Nombre': nombre, 'RFC': rfc, 'Correo': correo}
+        print(f"Cliente agregado con éxito. Clave del cliente: {clave_cliente}")
+        break
+
+
+def seleccionar_cliente():
+    while True:
+        print("\nClientes registrados:")
+        for clave, cliente in clientes_data.items():
+            print(f"{clave}. {cliente['Nombre']} (RFC: {cliente['RFC']})")
+
+        cliente_clave = input("Ingrese la clave del cliente o 'cancelar' para volver al menú: ")
+        if cliente_clave.lower() == 'cancelar':
+            return None
+        elif cliente_clave in clientes_data:
+            return cliente_clave
+        else:
+            print("Clave de cliente no válida. Ingrese una clave válida.")
+
+def ordenar_servicios_por_clave():
+    servicios_ordenados = sorted(servicios_data.items(), key=lambda item: item[0])
+    mostrar_reporte_servicios(servicios_ordenados, "clave")
+
+def ordenar_servicios_por_nombre():
+    servicios_ordenados = sorted(servicios_data.items(), key=lambda item: item[1]['Nombre'])
+    mostrar_reporte_servicios(servicios_ordenados, "nombre")
+
+
+def seleccionar_servicio():
+    while True:
+        print("\nServicios disponibles:")
+        for clave, servicio in servicios_data.items():
+            print(f"{clave}. {servicio['Nombre']} (Costo: ${servicio['Costo']:.2f})")
+
+        servicio_clave = input("Ingrese la clave del servicio o 'cancelar' para terminar la selección: ")
+        if servicio_clave.lower() == 'cancelar':
+            return None
+        elif servicio_clave in servicios_data:
+            return servicios_data[servicio_clave]
+        else:
+            print("Clave de servicio no válida. Ingrese una clave válida.")
+
+
+def cancelar_nota():
+    print("Cancelar una nota:")
+    folio_cancelar = int(input("Ingresa el folio de la nota a cancelar: "))
+    nota_cancelar = Nota_registrada.get(folio_cancelar)
+
+    if nota_cancelar:
+        if nota_cancelar['Cancelada']:
+            print(f"La nota {folio_cancelar} ya ha sido cancelada anteriormente.")
+        else:
+            generar_reporte(folio_cancelar, nota_cancelar) 
+            confirmacion = input(f"¿Deseas cancelar la nota {folio_cancelar}? (s/n): ").strip().lower()
+            if confirmacion == 's':
+                nota_cancelar['Cancelada'] = True
+                Notas_canceladas.append(nota_cancelar)
+                print(f"Nota {folio_cancelar} ha sido cancelada exitosamente.")
+            else:
+                print(f"La nota {folio_cancelar} no fue cancelada.")
+    else:
+        print(f"No se encontró una nota con el folio {folio_cancelar}.")
+        
+def consulta_por_folio():
+    print("Consulta por folio:")
+    if Nota_registrada:
+        print("Listado de notas registradas ordenadas por folio:")
+        print("{:<10} {:<15} {:<15}".format("Folio", "Fecha", "Nombre del Cliente"))
+        for folio, nota in sorted(Nota_registrada.items()):
+            if not nota['Cancelada']:
+                print("{:<10} {:<15} {:<15}".format(folio, nota['Fecha'], nota['Cliente']['Nombre']))
+
+        folio_consultar = int(input("Ingresa el folio de la nota a consultar: "))
+        nota_consultar = Nota_registrada.get(folio_consultar)
+
+        if nota_consultar:
+            if not nota_consultar['Cancelada']:
+                generar_reporte(folio_consultar, nota_consultar)
+            else:
+                print(f"La nota {folio_consultar} corresponde a una nota cancelada.")
+        else:
+            print(f"No se encontró una nota con el folio {folio_consultar}.")
+    else:
+        print("No hay notas registradas en el sistema.")
+
+
+def consulta_por_periodo():
+    print("Consulta por período:")
+    fecha_inicial_str = input("Ingresa la fecha inicial (YYYY-MM-DD) o presiona Enter para usar '01-01-2000': ").strip()
+    fecha_final_str = input("Ingresa la fecha final (YYYY-MM-DD) o presiona Enter para usar la fecha actual: ").strip()
+
+    if not fecha_inicial_str:
+        fecha_inicial_str = "2000-01-01"
+
+    fecha_inicial = datetime.strptime(fecha_inicial_str, "%Y-%m-%d")
+    
+    if not fecha_final_str:
+        fecha_final_str = datetime.now().strftime("%Y-%m-%d")
+
+    fecha_final = datetime.strptime(fecha_final_str, "%Y-%m-%d")
+
+    if fecha_final < fecha_inicial:
+        print("La fecha final debe ser igual o posterior a la fecha inicial. Consulta cancelada.")
+        return
+
+    notas_periodo = []
+    monto_total_periodo = 0
+    cantidad_notas_periodo = 0
+
+    for nota in Nota_registrada.values():
+        fecha_nota = datetime.strptime(nota['Fecha'], "%Y-%m-%d")
+        if fecha_inicial <= fecha_nota <= fecha_final:
+            notas_periodo.append(nota)
+            monto_total_periodo += nota['Monto Total']
+            cantidad_notas_periodo += 1
+
+    if cantidad_notas_periodo == 0:
+        print("No hay notas emitidas para el período especificado.")
+        return
+
+    monto_promedio_periodo = monto_total_periodo / cantidad_notas_periodo
+
+    print("Reporte por período:")
+    print(f"Fecha Inicial: {fecha_inicial_str}")
+    print(f"Fecha Final: {fecha_final_str}")
+    print(f"Cantidad de Notas: {cantidad_notas_periodo}")
+    print(f"Monto Promedio: ${monto_promedio_periodo:.2f}")
+
+    exportar_resultado = input("¿Deseas exportar este resultado a CSV, Excel o regresar al menú de reportes? (csv/excel/regresar): ").strip().lower()
+
+    if exportar_resultado == 'csv':
+        exportar_periodo_a_csv(notas_periodo, fecha_inicial_str, fecha_final_str)
+    elif exportar_resultado == 'excel':
+        exportar_periodo_a_excel(notas_periodo, fecha_inicial_str, fecha_final_str)
+
+    def exportar_nota_a_excel(nota):
+        fecha_actual = datetime.now().strftime("%Y-%m-%d")
+        rfc_cliente = nota['Cliente']['RFC']
+        nombre_archivo = f"Nota_{rfc_cliente}_{fecha_actual}.xlsx"
+
+        libro_trabajo = openpyxl.Workbook()
+        hoja = libro_trabajo.active
+        hoja.title = "Detalles de la Nota"
+
+        encabezados = ['Folio', 'Fecha', 'Cliente', 'RFC', 'Servicios', 'Monto Total', 'Cancelada']
+        hoja.append(encabezados)
+
+        detalle_nota = [
+            nota['Folio'],
+            nota['Fecha'],
+            nota['Cliente']['Nombre'],
+            nota['Cliente']['RFC'],
+            ", ".join([f"{servicio[0]} (${servicio[1]})" for servicio in nota['Servicios']]),
+            nota['Monto Total'],
+            nota['Cancelada']
+        ]
+        hoja.append(detalle_nota)
+
+        libro_trabajo.save(nombre_archivo)
+        print(f"Nota exportada a {nombre_archivo}")
+
+def consulta_por_cliente():
+    print("Consulta por cliente:")
+    rfc_list = sorted(set(cliente['RFC'] for cliente in Nota_registrada.values()))
+    for i, rfc in enumerate(rfc_list, 1):
+        print(f"{i}. {rfc}")
+
+    while True:
+        try:
+            seleccion = int(input("Selecciona el número correspondiente al RFC a consultar: "))
+            if 1 <= seleccion <= len(rfc_list):
+                rfc_seleccionado = rfc_list[seleccion - 1]
+                notas_cliente = [nota for nota in Nota_registrada.values() if nota['Cliente']['RFC'] == rfc_seleccionado]
+                if notas_cliente:
+                    mostrar_notas_cliente(notas_cliente)
+                else:
+                    print(f"No hay notas emitidas para el cliente con RFC {rfc_seleccionado}")
+                break
+            else:
+                print("Opción inválida. Ingresa un número válido.")
+        except ValueError:
+            print("Opción inválida. Ingresa un número válido.")
+
+
+def mostrar_notas_cliente(notas):
+    print("Notas del cliente:")
+    monto_promedio = sum(nota['Monto Total'] for nota in notas) / len(notas)
+    for nota in notas:
+        generar_reporte(nota['Folio'], nota)
+    exportar_excel = input("¿Deseas exportar esta información a Excel? (s/n): ").strip().lower()
+    if exportar_excel == 's':
+        exportar_notas_cliente_a_excel(notas)
+
+def consulta_por_cliente():
+    print("Consulta por cliente:")
+    rfc_cliente = input("Ingrese el RFC del cliente: ")
+    notas_cliente = [nota for nota in Nota_registrada.values() if nota['Cliente']['RFC'] == rfc_cliente]
+
+    if notas_cliente:
+        print("Notas del cliente:")
+        for nota in notas_cliente:
+            if not nota['Cancelada']:
+                generar_reporte(nota['Folio'], nota)
+    else:
+        print("No se encontraron notas para el cliente con RFC:", rfc_cliente)
+ 
+def consulta_por_periodo():
+    print("Consulta por período:")
+    fecha_inicio = input("Ingrese la fecha de inicio (YYYY-MM-DD): ")
+    fecha_fin = input("Ingrese la fecha de fin (YYYY-MM-DD): ")
+
+    notas_periodo = [nota for nota in Nota_registrada.values() if fecha_inicio <= nota['Fecha'] <= fecha_fin]
+
+    if notas_periodo:
+        print("Notas en el período seleccionado:")
+        for nota in notas_periodo:
+            if not nota['Cancelada']:
+                generar_reporte(nota['Folio'], nota)
+    else:
+        print("No se encontraron notas en el período especificado.")
+
+def exportar_notas_cliente_a_excel(notas):
+    rfc_cliente = notas[0]['Cliente']['RFC']
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    nombre_archivo = f"Notas_{rfc_cliente}_{fecha_actual}.xlsx"
+
+    libro_trabajo = openpyxl.Workbook()
+    hoja = libro_trabajo.active
+    hoja.title = "Notas del Cliente"
+
+    encabezados = ['Folio', 'Fecha', 'Servicios', 'Monto Total', 'Cancelada']
+    hoja.append(encabezados)
+
+    for nota in notas:
+        fila = [
+            nota['Folio'],
+            nota['Fecha'],
+            ", ".join([f"{servicio['Nombre']} (${servicio['Costo']})" for servicio in nota['Servicios']]),
+            nota['Monto Total'],
+            nota['Cancelada']
+        ]
+        hoja.append(fila)
+
+    libro_trabajo.save(nombre_archivo)
+    print(f"Notas del cliente exportadas a {nombre_archivo}")
+
+
+def recuperar_nota():
+    print("Recuperar una nota cancelada:")
+    notas_canceladas = [nota for nota in Notas_canceladas if nota['Cancelada']]
+    if notas_canceladas:
+        print("Notas canceladas:")
+        for i, nota in enumerate(notas_canceladas, 1):
+            print(f"{i}. Folio: {nota['Folio']}, Fecha: {nota['Fecha']}, Cliente: {nota['Cliente']['Nombre']}")
+        while True:
+            try:
+                seleccion = int(input("Selecciona el número correspondiente a la nota que deseas recuperar (o 0 para salir): "))
+                if 1 <= seleccion <= len(notas_canceladas):
+                    nota_seleccionada = notas_canceladas[seleccion - 1]
+                    confirmacion = input(f"¿Deseas recuperar la nota {nota_seleccionada['Folio']}? (s/n): ").strip().lower()
+                    if confirmacion == 's':
+                        nota_seleccionada['Cancelada'] = False
+                        print(f"La nota {nota_seleccionada['Folio']} ha sido recuperada.")
+                    else:
+                        print(f"La nota {nota_seleccionada['Folio']} no fue recuperada.")
+                elif seleccion == 0:
+                    break
+                else:
+                    print("Opción inválida. Ingresa un número válido.")
+            except ValueError:
+                print("Opción inválida. Ingresa un número válido.")
+
+
+def generar_reporte(folio, nota):
+    if folio in Nota_registrada:
+        print(f"Reporte de la nota {folio}:")
+        print(f"Folio: {nota['Folio']}")
+        print(f"Fecha: {nota['Fecha']}")
+        print(f"Cliente: {nota['Cliente']['Nombre']}")
+        print(f"RFC del Cliente: {nota['Cliente']['RFC']}")
+        print("Servicios realizados:")
+        for servicio in nota['Servicios']:
+            print(f"- {servicio['Nombre']} (${servicio['Costo']})")
+        print(f"Monto Total: ${nota['Monto Total']}")
+        if nota['Cancelada']:
+            print("Estado: Cancelada")
+        else:
+            print("Estado: Activa")
+    elif folio in [nota['Folio'] for nota in Notas_canceladas]:
+        print(f"La nota {folio} corresponde a una nota cancelada.")
+    else:
+        print(f"No se encontró una nota con el folio {folio}.")
+
+def mostrar_menu(opciones):
+    print("\nOpciones disponibles:")
+    for i, opcion in enumerate(opciones, 1):
+        print(f"{i}. {opcion}")
+    while True:
+        try:
+            seleccion = int(input("Selecciona una opción: "))
+            if 1 <= seleccion <= len(opciones):
+                return seleccion
+            else:
+                print("Opción inválida. Ingresa un número válido.")
+        except ValueError:
+            print("Opción inválida. Ingresa un número válido.")
+
+def agregar_servicio():
+    while True:
+        clave_servicio = str(uuid.uuid4())[:8] 
+        nombre = input("Ingrese el nombre del servicio: ").strip()
+        costo = input("Ingrese el costo del servicio: ").strip()
+
+       
+        if not (nombre and costo.replace('.', '', 1).isdigit() and float(costo) > 0):
+            print("Por favor, ingrese un nombre no vacío y un costo válido superior a 0.00.")
+            continue
+
+        costo = float(costo)  
+
+        servicios_data[clave_servicio] = {'Nombre': nombre, 'Costo': costo}
+        print(f"Servicio agregado con éxito. Clave del servicio: {clave_servicio}")
+        break
+
+def buscar_por_clave_servicio():
+    print("Búsqueda por clave de servicio:")
+    print("Listado de servicios disponibles:")
+    print("{:<10} {:<15}".format("Clave", "Nombre del Servicio"))
+    
+    for clave, servicio in servicios_data.items():
+        print("{:<10} {:<15}".format(clave, servicio['Nombre']))
+
+    clave_seleccionada = input("Ingrese la clave del servicio: ").strip()
+
+    if clave_seleccionada in servicios_data:
+        servicio = servicios_data[clave_seleccionada]
+        print("Detalle del servicio:")
+        print(f"Clave: {clave_seleccionada}")
+        print(f"Nombre del Servicio: {servicio['Nombre']}")
+        print(f"Costo: ${servicio['Costo']:.2f}")
+    else:
+        print("No se encontró un servicio con la clave proporcionada.")
+
+def buscar_por_nombre_servicio():
+    print("Búsqueda por nombre de servicio:")
+    nombre_servicio = input("Ingrese el nombre del servicio a buscar (insensible a mayúsculas y minúsculas): ").strip().lower()
+    
+    servicios_coincidentes = [servicio for clave, servicio in servicios_data.items() if nombre_servicio in servicio['Nombre'].lower()]
+    
+    if servicios_coincidentes:
+        print("Servicios encontrados:")
+        for servicio in servicios_coincidentes:
+            print(f"Clave: {clave}")
+            print(f"Nombre del Servicio: {servicio['Nombre']}")
+            print(f"Costo: ${servicio['Costo']:.2f}")
+    else:
+        print("No se encontraron servicios con el nombre proporcionado.")
+
+def consulta_por_servicio():
+    opciones_servicio = ["Búsqueda por clave de servicio", "Búsqueda por nombre de servicio"]
+    seleccion_servicio = mostrar_menu(opciones_servicio)
+
+    if seleccion_servicio == 1:
+        buscar_por_clave_servicio()
+    elif seleccion_servicio == 2:
+        buscar_por_nombre_servicio()
+
+def mostrar_reporte_servicios(servicios, orden):
+    if orden == "clave":
+        titulo_reporte = "Reporte de Servicios Ordenados por Clave"
+        nombre_archivo = f"ReporteServiciosPorClave_{datetime.now().strftime('%m_%d_%Y')}.csv"
+    else:
+        titulo_reporte = "Reporte de Servicios Ordenados por Nombre"
+        nombre_archivo = f"ReporteServiciosPorNombre_{datetime.now().strftime('%m_%d_%Y')}.csv"
+
+    print(titulo_reporte)
+    print("{:<10} {:<25} {:<10}".format("Clave", "Nombre del Servicio", "Costo"))
+    for clave, servicio in servicios:
+        print("{:<10} {:<25} {:<10}".format(clave, servicio['Nombre'], servicio['Costo']))
+
+    exportar_resultado = input("¿Deseas exportar este resultado a CSV, Excel o regresar al menú de reportes? (csv/excel/regresar): ").strip().lower()
+
+    if exportar_resultado == 'csv':
+        exportar_servicios_a_csv(servicios, nombre_archivo)
+    elif exportar_resultado == 'excel':
+        exportar_servicios_a_excel(servicios, nombre_archivo)
+
+def exportar_servicios_a_csv(servicios, nombre_archivo):
+    with open(nombre_archivo, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Clave", "Nombre del Servicio", "Costo"])
+        for clave, servicio in servicios:
+            writer.writerow([clave, servicio['Nombre'], servicio['Costo']])
+    print(f"Reporte exportado a {nombre_archivo}")
+
+def consulta_por_servicio():
+    opciones_servicio = ["Búsqueda por clave de servicio", "Búsqueda por nombre de servicio", "Ordenar por clave", "Ordenar por nombre"]
+    seleccion_servicio = mostrar_menu(opciones_servicio)
+
+    if seleccion_servicio == 1:
+        buscar_por_clave_servicio()
+    elif seleccion_servicio == 2:
+        buscar_por_nombre_servicio()
+    elif seleccion_servicio == 3:
+        ordenar_servicios_por_clave()
+    elif seleccion_servicio == 4:
+        ordenar_servicios_por_nombre()
+
+def confirmar_salida():
+    while True:
+        respuesta = input("¿Estás seguro de que deseas salir? (s/n): ").strip().lower()
+        if respuesta == 's':
+            return True
+        elif respuesta == 'n':
+            return False
+        else:
+            print("Opción inválida. Por favor, ingresa 's' para salir o 'n' para regresar al menú principal.")
+
+def main():
+    while True:
+        opcion = mostrar_menu(["Registrar una nota", "Consultas y reportes", "Recuperar una nota cancelada", "Cancelar una nota", "Mostrar notas canceladas", "Salir del sistema"])
+
+        if opcion == 1:
+            registrar_nota()
+        elif opcion == 2:
+            opciones_consulta = ["Consultar por folio", "Consultar por cliente", "Consulta por período", "Consulta por servicio"]
+            seleccion_consulta = mostrar_menu(opciones_consulta)
+
+            if seleccion_consulta == 1:
+                consulta_por_folio()
+            elif seleccion_consulta == 2:
+                consulta_por_cliente()
+            elif seleccion_consulta == 3:
+                consulta_por_periodo()
+            elif seleccion_consulta == 4:
+                consulta_por_servicio()
+        elif opcion == 3:
+            recuperar_nota()
+        elif opcion == 4:
+            cancelar_nota()
+        elif opcion == 5:
+            print("Notas canceladas:")
+            for nota in Notas_canceladas:
+                generar_reporte(nota['Folio'], nota)
+        elif opcion == 6:
+            if confirmar_salida():
+                print("Gracias por usar nuestro sistema.")
+                break
+if __name__ == '__main__':
+    main()
